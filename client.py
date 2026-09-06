@@ -1,12 +1,16 @@
 import asyncio
 import websockets
 
-SERVER_URL = "ws://localhost:8000/messanger"
+SERVER_URL = "ws://172.20.10.3:8000/messanger"
+OWN_SERVER_URL = "ws://172.20.10.12:8000/messanger"
+OWN_SERVER_URL_2 = "ws://127.0.0.1:8000/messanger"
+
 
 async def receive_messages(ws):
     while True:
         message = await ws.recv()
         print(f"\n{message}")
+
 
 async def send_messages(ws):
     while True:
@@ -17,6 +21,7 @@ async def send_messages(ws):
             return
 
         await ws.send(text)
+
 
 async def main():
     async with websockets.connect(SERVER_URL) as ws:
