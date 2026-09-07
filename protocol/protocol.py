@@ -21,32 +21,32 @@ def make_login(username: str, password: str) -> str:
     ).to_json()
 
 
-# def make_create_room(room: str) -> str:
-#     return Message(
-#         type=MessageType.CREATE_ROOM,
-#         room=room,
-#     ).to_json()
+def make_create_room(room: str) -> str:
+    return Message(
+        type=MessageType.CREATE_ROOM,
+        room=room,
+    ).to_json()
 
 
-# def make_close_room(room: str) -> str:
-#     return Message(
-#         type=MessageType.CLOSE_ROOM,
-#         room=room,
-#     ).to_json()
+def make_close_room(room: str) -> str:
+    return Message(
+        type=MessageType.CLOSE_ROOM,
+        room=room,
+    ).to_json()
 
 
-# def make_join(room: str) -> str:
-#     return Message(
-#         type=MessageType.JOIN,
-#         room=room,
-#     ).to_json()
+def make_join(room: str) -> str:
+    return Message(
+        type=MessageType.JOIN,
+        room=room,
+    ).to_json()
 
 
-# def make_leave(room: str) -> str:
-#     return Message(
-#         type=MessageType.LEAVE,
-#         room=room,
-#     ).to_json()
+def make_leave(room: str) -> str:
+    return Message(
+        type=MessageType.LEAVE,
+        room=room,
+    ).to_json()
 
 
 def make_chat(room: str, content: str) -> str:

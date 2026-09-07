@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 
 class MessageType(str, Enum):
     SIGNUP = "SIGNUP"
@@ -37,7 +37,7 @@ REQUIRED_FIELDS = {
 @dataclass
 class User:
     username: str
-    password: str
+    password: str = ""
     # connection_id: str
     authenticated: bool = False
     current_room: Optional[str] = None
@@ -55,11 +55,11 @@ class User:
 class Message:
     type: MessageType
     sender: str = "server"
-    room_id: str 
+    room: Optional[str] = None
     content: str = ""
-    username: str = "Annonymous"
-    # password: Optional[str] = None
-    # code: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    code: Optional[str] = None
     timestamp: float = field(default_factory=time.time)
 
     def to_string(self) -> str:
@@ -74,8 +74,7 @@ class Message:
 
         if self.room is not None:
             payload["room"] = self.room
-        if self.content:
-            payload["content"] = self.content
+        payload["content"] = self.content
         if self.username is not None:
             payload["username"] = self.username
         if self.password is not None:
@@ -97,7 +96,7 @@ class Message:
 
         type_raw = data.get("type")
 
-        if type_raw not in MessageType._value2member_map_:
+        if not isinstance(type_raw, str) or type_raw not in MessageType._value2member_map_:
             raise ValueError(f"unknown message type: {type_raw}")
 
         msg_type = MessageType(type_raw)
@@ -115,6 +114,7 @@ class Message:
             "username",
             "password",
             "sender",
+            "code",
         ):
             if field_name in data and data[field_name] is not None:
                 if not isinstance(data[field_name], str):
@@ -122,6 +122,18 @@ class Message:
                         f"{field_name} must be a string, "
                         f"got {type(data[field_name]).__name__}"
                     )
+
+        for field_name in REQUIRED_FIELDS[msg_type]:
+            if not isinstance(data[field_name], str):
+                raise ValueError(f"{field_name} must be a string")
+        if "room" in data and (not isinstance(data["room"], str) or not data["room"].strip()):
+            raise ValueError("room must be a non-empty string")
+        if "sender" in data and not isinstance(data["sender"], str):
+            raise ValueError("sender must be a string")
+        if "content" in data and not isinstance(data["content"], str):
+            raise ValueError("content must be a string")
+        if "timestamp" in data and (isinstance(data["timestamp"], bool) or not isinstance(data["timestamp"], (int, float))):
+            raise ValueError("timestamp must be a number")
 
         return Message(
             type=msg_type,
@@ -137,21 +149,38 @@ class Message:
 
 
 
-    class Room():
-        MSG_CONNECTION = "{user_name} has joined"
-        MSG_DISCONNECTION = "{user_name} has left"
+class Room:
+    MSG_CONNECTION = "{user_name} has joined"
+    MSG_DISCONNECTION = "{user_name} has left"
 
-        def __init__(self, room_id: str):
-            self.room_id = room_id
-            self.connected_clients = []
+    def __init__(self, room_id: str):
+        self.room_id = room_id
+        self.connected_clients: dict[WebSocket, User] = {}
 
+    async def broadcast(self, message: str):
+        for websocket, user in list(self.connected_clients.items()):
+            try:
+                await websocket.send_text(message)
+            except (WebSocketDisconnect, OSError, RuntimeError):
+                self.connected_clients.pop(websocket, None)
+                if user.current_room == self.room_id:
+                    user.current_room = None
 
-        async def add_client(self, user: User, websocket: WebSocket):
-            self.connected_clients.append(tuple(user, websocket))
-            for client in self.connected_clients:
-                await client.send_text(self.MSG_CONNECTION.format(user.username))
+    async def add_client(self, user: User, websocket: WebSocket):
+        if websocket in self.connected_clients:
+            return
+        self.connected_clients[websocket] = user
+        user.current_room = self.room_id
+        await self.broadcast(
+            "server : " + self.MSG_CONNECTION.format(user_name=user.username)
+        )
 
-        async def remove_client(self, user: User):
-            self.connected_clients.remove(user)
-            for client in self.connected_clients:
-                await client.send_text(self.MSG_CONNECTION.format(user.username))
+    async def remove_client(self, websocket: WebSocket):
+        user = self.connected_clients.pop(websocket, None)
+        if user is None:
+            return
+        if user.current_room == self.room_id:
+            user.current_room = None
+        await self.broadcast(
+            "server : " + self.MSG_DISCONNECTION.format(user_name=user.username)
+        )

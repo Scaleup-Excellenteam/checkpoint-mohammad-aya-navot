@@ -3,18 +3,21 @@ import hmac
 import secrets
 import sqlite3
 from pathlib import Path
-from protocol/
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import uvicorn
 
-from protocol.models import Message, MessageType
+from protocol.models import Message, MessageType, Room, User
 from protocol.protocol import make_ack, make_error
 
 app = FastAPI()
 PORT = 8000
+RED = "\033[31m"
+GREEN = "\033[32m"
+RESET = "\033[0m"
 
-rooms = []
-connected_clients = []
+
+rooms: dict[str, Room] = {}
 DATABASE_PATH = Path(__file__).with_name("users.db")
 PASSWORD_HASH_ITERATIONS = 200_000
 
@@ -138,46 +141,75 @@ async def authenticate(websocket):
 create_users_table()
 
 
+def format_message(msg: str, mode: bool) -> str:
+    if(mode == 0):
+        return str(f"{RED}server: {msg} {RESET}")
+    
+    if(mode == 1):
+        return str(f"{GREEN}{msg} {RESET}")
+
+
+    
+
+
 @app.get("/health")
 async def health_check():
     return {"Status": "Healthy"}
 
 
-@app.websocket("/messanger")
-async def websocket_messanger(websocket: WebSocket):
-    # +==== Initial Handshake ====+
-    await websocket.accept()
+async def room_lounge(websocket: WebSocket) -> Room:
+    while True:
+        available = ", ".join(rooms) or "(no rooms yet)"
+        await websocket.send_text(
+            f"Rooms: {available}\nEnter a room name, or /create to create a room."
+        )
+        choice = (await websocket.receive_text()).strip()
+        if choice == "/create":
+            await websocket.send_text(format_message("Enter a name for the new room:", False))
+            room_id = (await websocket.receive_text()).strip()
+            if not room_id or room_id == "/create":
+                await websocket.send_text(format_message("Please choose a valid room name.", False))
+                continue
+            if room_id in rooms:
+                await websocket.send_text(format_message("Room already exists.", False))
+                continue
+            rooms[room_id] = Room(room_id)
+            return rooms[room_id]
+        if choice in rooms:
+            return rooms[choice]
+        await websocket.send_text(format_message("Room does not exist.", False))
 
-    # +==== Authentication Phase ====+
+
+async def room_chat(websocket: WebSocket, user: User, room: Room):
+    try:
+        await room.add_client(user, websocket)
+        await websocket.send_text(format_message("Type quit to return to the lounge."))
+        while True:
+            content = await websocket.receive_text()
+            if content.strip().lower() == "quit":
+                return
+            await room.broadcast(f"{user.username} : {content}")
+    finally:
+        await room.remove_client(websocket)
+
+
+
+@app.websocket("/messanger")
+async def websocket_manager(websocket: WebSocket):
+    await websocket.accept()
     try:
         username = await authenticate(websocket)
-    except WebSocketDisconnect:
-        return
-
-    # +==== Room Selection ====+
-    select_room()
-    connected_clients.append(websocket)
-    print(f"{username} connected. Total clients: {len(connected_clients)}")
-
-
-    # +==== Room Routine ====+
-    try:
+        user = User(username=username, authenticated=True)
         while True:
-            data = await websocket.receive_text()
-            print(f"Received data from {username}: {data}")
-
-            # +==== Router ====+
-            for client in connected_clients:
-                await client.send_text(f"{username}: {data}")
-
+            room = await room_lounge(websocket)
+            await room_chat(websocket, user, room)
     except WebSocketDisconnect:
-        connected_clients.remove(websocket)
-        print(f"{username} disconnected. Total clients: {len(connected_clients)}")
+        pass
+
 
 
 def main():
     uvicorn.run(app, host="0.0.0.0", port=PORT)
-
 
 
 if __name__ == "__main__":
