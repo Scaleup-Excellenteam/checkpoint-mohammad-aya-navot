@@ -2,18 +2,29 @@ import hashlib
 import hmac
 import secrets
 import sqlite3
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import uvicorn
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from protocol.models import Message, MessageType
 from protocol.protocol import make_ack, make_error
+
+if __package__:
+    from .antibot import AntiBotService
+else:
+    from antibot import AntiBotService
 
 app = FastAPI()
 PORT = 8000
 
 connected_clients = []
+anti_bot = AntiBotService()
 DATABASE_PATH = Path(__file__).with_name("users.db")
 PASSWORD_HASH_ITERATIONS = 200_000
 
@@ -170,6 +181,19 @@ async def websocket_messanger(websocket: WebSocket):
             data = await websocket.receive_text()
 
             print(f"Received data from {username}: {data}")
+
+            try:
+                request = Message.from_json(data)
+            except ValueError:
+                request = None
+
+            if request is not None and request.type == MessageType.CHAT:
+                decision = await anti_bot.check_message(request.content, username)
+                if not decision.allowed:
+                    await websocket.send_text(
+                        make_error(decision.reason, code="ANTIBOT_BLOCKED")
+                    )
+                    continue
 
             for client in connected_clients:
                 await client.send_text(f"{username}: {data}")
