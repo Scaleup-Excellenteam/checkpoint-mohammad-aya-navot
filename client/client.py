@@ -13,6 +13,10 @@ import re
 import sys
 import websockets
 
+from config import (
+    CLIENT_LOG_PATH, LOG_FORMAT, LOG_LEVEL, RECONNECT_BACKOFF_MULTIPLIER,
+    RECONNECT_INITIAL_DELAY, RECONNECT_MAX_DELAY, SERVER_URL,
+)
 from protocol.models import Message, MessageType
 from protocol.protocol import make_signup, make_login
 
@@ -20,10 +24,10 @@ from protocol.protocol import make_signup, make_login
 # Logging - file + console, password always redacted
 # ---------------------------------------------------------------------------
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    level=LOG_LEVEL,
+    format=LOG_FORMAT,
     handlers=[
-        logging.FileHandler("client.log"),
+        logging.FileHandler(CLIENT_LOG_PATH),
         logging.StreamHandler(sys.stderr),  # keep chat prompt on stdout clean
     ],
 )
@@ -129,14 +133,14 @@ async def session(server_url: str, on_connected=None):
 
 
 async def main():
-    server_url = sys.argv[1] if len(sys.argv) > 1 else "ws://localhost:8000/messanger"
+    server_url = sys.argv[1] if len(sys.argv) > 1 else SERVER_URL
 
-    retry_delay = 1
-    max_retry_delay = 30
+    retry_delay = RECONNECT_INITIAL_DELAY
+    max_retry_delay = RECONNECT_MAX_DELAY
 
     def reset_delay():
         nonlocal retry_delay
-        retry_delay = 1
+        retry_delay = RECONNECT_INITIAL_DELAY
 
     while True:
         try:
@@ -152,7 +156,7 @@ async def main():
             log.warning(f"disconnected/failed to connect ({e}); retrying in {retry_delay}s")
             print(f"\n[connection lost - retrying in {retry_delay}s. Ctrl+C to give up]")
             await asyncio.sleep(retry_delay)
-            retry_delay = min(retry_delay * 2, max_retry_delay)
+            retry_delay = min(retry_delay * RECONNECT_BACKOFF_MULTIPLIER, max_retry_delay)
             continue
 
 

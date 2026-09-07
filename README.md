@@ -8,7 +8,14 @@ python -m server.server
 python -m client.client
 ```
 
-The client connects to `ws://localhost:8000/manager`. `/messanger` also works.
+Shared settings live in `config.py`: server bind address and port, client host,
+WebSocket and health routes, database/log paths, logging, password hashing
+iterations, reconnect delays, and development mock connection settings.
+Set `CLIENT_HOST` to the server machine’s address (or `localhost` for local use).
+The client URL is built from that host and the shared server port and route.
+You can override it for one run with `python -m client.client <websocket-url>`.
+Run the development mock with `python -m client.dev_tools.mock_auth`; it uses
+the mock settings but still implements the older JSON chat protocol.
 Use `server/server.py`; `../server.py` is an unfinished prototype.
 
 After signup and login, the server shows a lounge listing existing room IDs.

@@ -12,14 +12,17 @@ server/identity teammates have something working.
 
 Requires: pip install websockets
 Usage:
-    python mock_auth.py
-    (listens on ws://0.0.0.0:9090/messanger, matching the real server's address)
+    python -m client.dev_tools.mock_auth
+    (connection settings are in config.py)
 """
 
 import asyncio
 import logging
 import websockets
 
+from config import (
+    LOG_FORMAT, LOG_LEVEL, MOCK_SERVER_HOST, MOCK_SERVER_PORT, MOCK_SERVER_URL,
+)
 from protocol.models import Message, MessageType
 from protocol.protocol import (
     make_ack,
@@ -27,7 +30,7 @@ from protocol.protocol import (
     make_system,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(level=LOG_LEVEL, format=LOG_FORMAT)
 log = logging.getLogger("mock_auth")
 
 # in-memory "database" - NOT how the real identity teammate should do it,
@@ -132,8 +135,8 @@ async def handle_client(websocket):
 
 
 async def main():
-    async with websockets.serve(handle_client, "0.0.0.0", 9090):
-        log.info("mock_auth server listening on ws://0.0.0.0:9090/messanger")
+    async with websockets.serve(handle_client, MOCK_SERVER_HOST, MOCK_SERVER_PORT):
+        log.info("mock_auth server available at %s", MOCK_SERVER_URL)
         await asyncio.Future()
 
 

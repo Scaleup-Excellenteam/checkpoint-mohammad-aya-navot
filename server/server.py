@@ -2,16 +2,18 @@ import hashlib
 import hmac
 import secrets
 import sqlite3
-from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import uvicorn
 
+from config import (
+    DATABASE_PATH, HEALTH_PATH, PASSWORD_HASH_ITERATIONS,
+    SERVER_HOST, SERVER_PORT, WEBSOCKET_PATH,
+)
 from protocol.models import Message, MessageType, Room, User
 from protocol.protocol import make_ack, make_error
 
 app = FastAPI()
-PORT = 8000
 RED = "\033[31m"
 BLUE = "\033[34m"
 GREEN = "\033[32m"
@@ -19,8 +21,6 @@ RESET = "\033[0m"
 
 
 rooms: dict[str, Room] = {}
-DATABASE_PATH = Path(__file__).with_name("users.db")
-PASSWORD_HASH_ITERATIONS = 200_000
 
 
 def create_users_table():
@@ -164,7 +164,7 @@ def format_message(msg: str, mode: bool) -> str:
     
 
 
-@app.get("/health")
+@app.get(HEALTH_PATH)
 async def health_check():
     return {"Status": "Healthy"}
 
@@ -206,7 +206,7 @@ async def room_chat(websocket: WebSocket, user: User, room: Room):
 
 
 
-@app.websocket("/messanger")
+@app.websocket(WEBSOCKET_PATH)
 async def websocket_manager(websocket: WebSocket):
     await websocket.accept()
     try:
@@ -221,7 +221,7 @@ async def websocket_manager(websocket: WebSocket):
 
 
 def main():
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT)
 
 
 if __name__ == "__main__":
