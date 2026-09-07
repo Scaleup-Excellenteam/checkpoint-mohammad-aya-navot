@@ -13,6 +13,7 @@ from protocol.protocol import make_ack, make_error
 app = FastAPI()
 PORT = 8000
 RED = "\033[31m"
+BLUE = "\033[34m"
 GREEN = "\033[32m"
 RESET = "\033[0m"
 
@@ -154,7 +155,7 @@ create_users_table()
 
 def format_message(msg: str, mode: bool) -> str:
     if(mode == 0):
-        return str(f"{RED}server: {msg} {RESET}")
+        return str(f"{BLUE}server: {msg} {RESET}")
     
     if(mode == 1):
         return str(f"{GREEN}{msg} {RESET}")
@@ -172,7 +173,7 @@ async def room_lounge(websocket: WebSocket) -> Room:
     while True:
         available = ", ".join(rooms) or "(no rooms yet)"
         await websocket.send_text(
-            f"Rooms: {available}\nEnter a room name, or /create to create a room."
+            format_message(f"Rooms: {available}\nEnter a room name, or /create to create a room.", False)
         )
         choice = (await websocket.receive_text()).strip()
         if choice == "/create":
@@ -194,7 +195,7 @@ async def room_lounge(websocket: WebSocket) -> Room:
 async def room_chat(websocket: WebSocket, user: User, room: Room):
     try:
         await room.add_client(user, websocket)
-        await websocket.send_text(format_message("Type quit to return to the lounge."))
+        await websocket.send_text(format_message("Type quit to return to the lounge.", False))
         while True:
             content = await websocket.receive_text()
             if content.strip().lower() == "quit":
