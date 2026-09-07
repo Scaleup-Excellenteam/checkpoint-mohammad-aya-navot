@@ -2,13 +2,14 @@ import hashlib
 import json
 import sqlite3
 from pathlib import Path
-
+from protocol/
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import uvicorn
 
 app = FastAPI()
 PORT = 8000
 
+rooms = []
 connected_clients = []
 DATABASE_PATH = Path(__file__).with_name("users.db")
 
@@ -98,22 +99,28 @@ async def health_check():
 
 @app.websocket("/messanger")
 async def websocket_messanger(websocket: WebSocket):
+    # +==== Initial Handshake ====+
     await websocket.accept()
 
+    # +==== Authentication Phase ====+
     try:
         username = await authenticate(websocket)
     except WebSocketDisconnect:
         return
 
+    # +==== Room Selection ====+
+    select_room()
     connected_clients.append(websocket)
     print(f"{username} connected. Total clients: {len(connected_clients)}")
 
+
+    # +==== Room Routine ====+
     try:
         while True:
             data = await websocket.receive_text()
-
             print(f"Received data from {username}: {data}")
 
+            # +==== Router ====+
             for client in connected_clients:
                 await client.send_text(f"{username}: {data}")
 
@@ -124,6 +131,7 @@ async def websocket_messanger(websocket: WebSocket):
 
 def main():
     uvicorn.run(app, host="0.0.0.0", port=PORT)
+
 
 
 if __name__ == "__main__":

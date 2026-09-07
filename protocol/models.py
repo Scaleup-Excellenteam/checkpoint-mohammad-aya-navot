@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
-
+from fastapi import WebSocket
 
 class MessageType(str, Enum):
     SIGNUP = "SIGNUP"
@@ -37,14 +37,15 @@ REQUIRED_FIELDS = {
 @dataclass
 class User:
     username: str
-    connection_id: str
+    password: str
+    # connection_id: str
     authenticated: bool = False
     current_room: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
             "username": self.username,
-            "connection_id": self.connection_id,
+            # "connection_id": self.connection_id,
             "authenticated": self.authenticated,
             "current_room": self.current_room,
         }
@@ -54,12 +55,15 @@ class User:
 class Message:
     type: MessageType
     sender: str = "server"
-    room: Optional[str] = None
+    room_id: str 
     content: str = ""
-    username: Optional[str] = None
-    password: Optional[str] = None
-    code: Optional[str] = None
+    username: str = "Annonymous"
+    # password: Optional[str] = None
+    # code: Optional[str] = None
     timestamp: float = field(default_factory=time.time)
+
+    def to_string(self) -> str:
+        return f"{self.sender} : {self.content}"
 
     def to_json(self) -> str:
         payload = {
@@ -129,3 +133,25 @@ class Message:
             code=data.get("code"),
             timestamp=data.get("timestamp", time.time()),
         )
+
+
+
+
+    class Room():
+        MSG_CONNECTION = "{user_name} has joined"
+        MSG_DISCONNECTION = "{user_name} has left"
+
+        def __init__(self, room_id: str):
+            self.room_id = room_id
+            self.connected_clients = []
+
+
+        async def add_client(self, user: User, websocket: WebSocket):
+            self.connected_clients.append(tuple(user, websocket))
+            for client in self.connected_clients:
+                await client.send_text(self.MSG_CONNECTION.format(user.username))
+
+        async def remove_client(self, user: User):
+            self.connected_clients.remove(user)
+            for client in self.connected_clients:
+                await client.send_text(self.MSG_CONNECTION.format(user.username))
