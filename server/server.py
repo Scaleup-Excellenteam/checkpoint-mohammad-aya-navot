@@ -1,16 +1,21 @@
 import hashlib
-import json
+import hmac
+import secrets
 import sqlite3
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import uvicorn
 
+from protocol.models import Message, MessageType
+from protocol.protocol import make_ack, make_error
+
 app = FastAPI()
 PORT = 8000
 
 connected_clients = []
 DATABASE_PATH = Path(__file__).with_name("users.db")
+PASSWORD_HASH_ITERATIONS = 200_000
 
 
 def create_users_table():
@@ -19,13 +24,29 @@ def create_users_table():
             """
             CREATE TABLE IF NOT EXISTS users (
                 username TEXT PRIMARY KEY,
-                password TEXT NOT NULL
+                password TEXT NOT NULL,
+                salt TEXT NOT NULL
             )
             """
         )
 
+        columns = {
+            column[1] for column in database.execute("PRAGMA table_info(users)")
+        }
+        if "salt" not in columns:
+            database.execute("ALTER TABLE users ADD COLUMN salt TEXT")
 
-def hash_password(password):
+
+def hash_password(password, salt):
+    return hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode(),
+        bytes.fromhex(salt),
+        PASSWORD_HASH_ITERATIONS,
+    ).hex()
+
+
+def hash_legacy_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 
@@ -33,11 +54,13 @@ def signup(username, password):
     if not username or not password:
         return False, "Username and password cannot be empty."
 
+    salt = secrets.token_hex(16)
+
     try:
         with sqlite3.connect(DATABASE_PATH) as database:
             database.execute(
-                "INSERT INTO users (username, password) VALUES (?, ?)",
-                (username, hash_password(password)),
+                "INSERT INTO users (username, password, salt) VALUES (?, ?, ?)",
+                (username, hash_password(password, salt), salt),
             )
     except sqlite3.IntegrityError:
         return False, "Username already exists."
@@ -48,42 +71,65 @@ def signup(username, password):
 def login(username, password):
     with sqlite3.connect(DATABASE_PATH) as database:
         user = database.execute(
-            "SELECT password FROM users WHERE username = ?", (username,)
+            "SELECT password, salt FROM users WHERE username = ?", (username,)
         ).fetchone()
 
-    if user is None or user[0] != hash_password(password):
+        if user is None:
+            return False, "Wrong username or password."
+
+        stored_hash, salt = user
+        if salt:
+            password_matches = hmac.compare_digest(
+                stored_hash,
+                hash_password(password, salt),
+            )
+        else:
+            password_matches = hmac.compare_digest(
+                stored_hash,
+                hash_legacy_password(password),
+            )
+            if password_matches:
+                salt = secrets.token_hex(16)
+                database.execute(
+                    "UPDATE users SET password = ?, salt = ? WHERE username = ?",
+                    (hash_password(password, salt), salt, username),
+                )
+
+    if not password_matches:
         return False, "Wrong username or password."
 
     return True, "Login successful."
 
 
 async def authenticate(websocket):
-    await websocket.send_text(
-        json.dumps({"message": "Please sign up or log in."})
-    )
-
     while True:
         try:
-            request = json.loads(await websocket.receive_text())
-            action = request.get("action")
-            username = request.get("username", "").strip()
-            password = request.get("password", "")
-        except (json.JSONDecodeError, AttributeError):
+            request = Message.from_json(await websocket.receive_text())
+        except ValueError as error:
+            await websocket.send_text(make_error(str(error), code="INVALID_MESSAGE"))
+            continue
+
+        if request.type not in (MessageType.SIGNUP, MessageType.LOGIN):
             await websocket.send_text(
-                json.dumps({"success": False, "message": "Invalid request."})
+                make_error(
+                    "Choose signup or login.",
+                    code="AUTH_MESSAGE_REQUIRED",
+                )
             )
             continue
 
-        if action == "signup":
-            success, message = signup(username, password)
-        elif action == "login":
-            success, message = login(username, password)
-        else:
-            success, message = False, "Choose signup or login."
+        username = (request.username or "").strip()
+        password = request.password or ""
 
-        await websocket.send_text(
-            json.dumps({"success": success, "message": message})
-        )
+        if request.type == MessageType.SIGNUP:
+            success, message = signup(username, password)
+            response = make_ack("SIGNUP") if success else make_error(message)
+            await websocket.send_text(response)
+            continue
+
+        success, message = login(username, password)
+        response = make_ack("LOGIN") if success else make_error(message)
+        await websocket.send_text(response)
         if success:
             return username
 
