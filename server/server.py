@@ -24,7 +24,7 @@ def create_users_table():
             """
             CREATE TABLE IF NOT EXISTS users (
                 username TEXT PRIMARY KEY,
-                password TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
                 salt TEXT NOT NULL
             )
             """
@@ -33,6 +33,10 @@ def create_users_table():
         columns = {
             column[1] for column in database.execute("PRAGMA table_info(users)")
         }
+        if "password_hash" not in columns and "password" in columns:
+            database.execute(
+                "ALTER TABLE users RENAME COLUMN password TO password_hash"
+            )
         if "salt" not in columns:
             database.execute("ALTER TABLE users ADD COLUMN salt TEXT")
 
@@ -59,7 +63,10 @@ def signup(username, password):
     try:
         with sqlite3.connect(DATABASE_PATH) as database:
             database.execute(
-                "INSERT INTO users (username, password, salt) VALUES (?, ?, ?)",
+                """
+                INSERT INTO users (username, password_hash, salt)
+                VALUES (?, ?, ?)
+                """,
                 (username, hash_password(password, salt), salt),
             )
     except sqlite3.IntegrityError:
@@ -71,7 +78,8 @@ def signup(username, password):
 def login(username, password):
     with sqlite3.connect(DATABASE_PATH) as database:
         user = database.execute(
-            "SELECT password, salt FROM users WHERE username = ?", (username,)
+            "SELECT password_hash, salt FROM users WHERE username = ?",
+            (username,),
         ).fetchone()
 
         if user is None:
@@ -91,7 +99,10 @@ def login(username, password):
             if password_matches:
                 salt = secrets.token_hex(16)
                 database.execute(
-                    "UPDATE users SET password = ?, salt = ? WHERE username = ?",
+                    """
+                    UPDATE users SET password_hash = ?, salt = ?
+                    WHERE username = ?
+                    """,
                     (hash_password(password, salt), salt, username),
                 )
 
