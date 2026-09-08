@@ -150,17 +150,21 @@ class Message:
 
 
 class Room:
-    MSG_CONNECTION = "{user_name} has joined"
-    MSG_DISCONNECTION = "{user_name} has left"
+    MSG_JOIN = "{user_name} has joined"
+    MSG_LEAVE = "{user_name} has left"
 
     def __init__(self, room_id: str):
         self.room_id = room_id
         self.connected_clients: dict[WebSocket, User] = {}
 
-    async def broadcast(self, message: str):
+    async def broadcast(
+        self, message: str, *, sender: Optional[WebSocket] = None,
+        own_message: Optional[str] = None,
+    ):
         for websocket, user in list(self.connected_clients.items()):
             try:
-                await websocket.send_text(message)
+                outgoing = own_message if websocket is sender and own_message is not None else message
+                await websocket.send_text(outgoing)
             except (WebSocketDisconnect, OSError, RuntimeError):
                 self.connected_clients.pop(websocket, None)
                 if user.current_room == self.room_id:
@@ -171,9 +175,7 @@ class Room:
             return
         self.connected_clients[websocket] = user
         user.current_room = self.room_id
-        await self.broadcast(
-            "server : " + self.MSG_CONNECTION.format(user_name=user.username)
-        )
+       
 
     async def remove_client(self, websocket: WebSocket):
         user = self.connected_clients.pop(websocket, None)
@@ -181,6 +183,4 @@ class Room:
             return
         if user.current_room == self.room_id:
             user.current_room = None
-        await self.broadcast(
-            "server : " + self.MSG_DISCONNECTION.format(user_name=user.username)
-        )
+       

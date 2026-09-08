@@ -60,7 +60,7 @@ def redact_for_log(raw_json: str) -> str:
 
 async def receive_loop(ws):
     async for text in ws:
-        print(f"\n{text}\n> ", end="", flush=True)
+        print(f"\r\033[2K{text}" if sys.stdout.isatty() else text, flush=True)
 
 
 class UserQuit(Exception):
@@ -70,6 +70,10 @@ class UserQuit(Exception):
 async def send_loop(ws):
     while True:
         text = await asyncio.to_thread(input, "> ")
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            # input() leaves the cursor below the submitted line.
+            # The server's accepted echo supplies the formatted chat entry.
+            print("\033[1A\r\033[2K", end="", flush=True)
         await ws.send(text)
 
 

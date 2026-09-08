@@ -3,9 +3,15 @@
 Run scripts as modules from the project root so they can import this file.
 """
 
+import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 PROJECT_ROOT = Path(__file__).resolve().parent
+load_dotenv(PROJECT_ROOT / ".env")
+
+VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY", "cc1ea4d5cd27c01aa581db2272bebcb018094f0be234d3285a909324636376db")
 
 SERVER_HOST = "0.0.0.0"  # Listen on all network interfaces.
 SERVER_PORT = 8000

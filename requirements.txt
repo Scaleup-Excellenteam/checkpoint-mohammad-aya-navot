@@ -2,3 +2,5 @@ fastapi
 uvicorn
 websockets
 uuid
+httpx
+python-dotenv
